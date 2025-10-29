@@ -2,18 +2,20 @@ package com.tpi.solicitudes.web;
 
 import com.tpi.solicitudes.domain.Tramo;
 import com.tpi.solicitudes.service.TramoService;
+import com.tpi.solicitudes.web.dto.AsignarCamionRequest;
 import com.tpi.solicitudes.web.dto.FinalizarTramoRequest;
 import com.tpi.solicitudes.web.dto.TramoAsignacionDTO;
 import com.tpi.solicitudes.web.dto.TramoCreateDto;
 import jakarta.validation.Valid;
+import reactor.core.publisher.Mono;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
 
 @RestController
 public class TramoController {
@@ -27,6 +29,12 @@ public class TramoController {
     @GetMapping("/solicitudes/{solicitudId}/tramos")
     public Page<Tramo> listarPorSolicitud(@PathVariable Long solicitudId, Pageable pageable) {
         return service.listarPorSolicitud(solicitudId, pageable);
+    }
+
+    // Endpoint adicional en /api/solicitudes (RESTful)
+    @GetMapping("/api/solicitudes/{idSolicitud}/tramos")
+    public Page<Tramo> listarPorSolicitudApi(@PathVariable Long idSolicitud, Pageable pageable) {
+        return service.listarPorSolicitud(idSolicitud, pageable);
     }
 
     @PostMapping("/solicitudes/{solicitudId}/tramos")
@@ -68,11 +76,19 @@ public class TramoController {
     }
 
     @PutMapping("/api/tramos/{idTramo}/asignarACamion")
-    public Tramo asignarACamion(@PathVariable Long idTramo, @RequestBody @Valid TramoAsignacionDTO body) {
+    public Mono<Tramo> asignarACamion(@PathVariable Long idTramo, @RequestBody @Valid TramoAsignacionDTO body) {
         return service.asignarACamion(idTramo, body.dominioCamion());
     }
 
+    // Endpoint RESTful con guiones
+    @PutMapping("/api/tramos/{idTramo}/asignar-camion")
+    @PreAuthorize("hasRole('OPERADOR')")
+    public Mono<Tramo> asignarCamion(@PathVariable Long idTramo, @RequestBody @Valid AsignarCamionRequest request) {
+        return service.asignarACamion(idTramo, request.dominioCamion());
+    }
+
     @PutMapping("/api/tramos/{idTramo}/iniciar")
+    @PreAuthorize("hasRole('TRANSPORTISTA')")
     public Tramo iniciar(@PathVariable Long idTramo) {
         return service.iniciarTramo(idTramo);
     }

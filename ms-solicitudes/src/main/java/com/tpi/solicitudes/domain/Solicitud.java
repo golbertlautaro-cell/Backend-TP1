@@ -27,7 +27,9 @@ public class Solicitud {
     @Column(name = "id_cliente")
     private Long idCliente;
 
-    private String estado;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "estado")
+    private EstadoSolicitud estado;
 
     @Column(name = "costo_estimado")
     private Double costoEstimado;

@@ -2,6 +2,7 @@ package com.tpi.solicitudes.client;
 
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
 
 import java.util.Map;
 
@@ -17,43 +18,39 @@ public class LogisticaClient {
     /**
      * Consulta el estado de los camiones (libres/ocupados) en ms-logistica.
      */
-    public Map<String, Object> obtenerEstadoCamiones() {
+    public Mono<Map<String, Object>> obtenerEstadoCamiones() {
         return webClient.get()
                 .uri("/api/camiones/estado")
                 .retrieve()
-                .bodyToMono(Map.class)
-                .block();
+                .bodyToMono(new org.springframework.core.ParameterizedTypeReference<Map<String, Object>>() {});
     }
 
     /**
      * Valida si un camión tiene capacidad suficiente para un contenedor.
      * Implementa RF11 consultando ms-logistica.
      */
-    public boolean validarCapacidadCamion(String dominio, Double peso, Double volumen) {
+    public Mono<Boolean> validarCapacidadCamion(String dominio, Double peso, Double volumen) {
         Map<String, Object> request = Map.of(
                 "dominio", dominio,
                 "pesoContenedor", peso,
                 "volumenContenedor", volumen
         );
 
-        Map<String, Object> response = webClient.post()
-                .uri("/api/camiones/validar-capacidad")
-                .bodyValue(request)
-                .retrieve()
-                .bodyToMono(Map.class)
-                .block();
-
-        return response != null && Boolean.TRUE.equals(response.get("valido"));
+    return webClient.post()
+        .uri("/api/camiones/validar-capacidad")
+        .bodyValue(request)
+        .retrieve()
+        .bodyToMono(new org.springframework.core.ParameterizedTypeReference<Map<String, Object>>() {})
+        .map(resp -> resp != null && Boolean.TRUE.equals(resp.get("valido")));
     }
 
     /**
      * Obtiene los datos de un camión específico por su dominio.
      */
-    public Map<String, Object> obtenerCamion(String dominio) {
+    public Mono<Map<String, Object>> obtenerCamion(String dominio) {
         return webClient.get()
                 .uri("/api/camiones/{dominio}", dominio)
                 .retrieve()
-                .bodyToMono(Map.class)
-                .block();
+                .bodyToMono(new org.springframework.core.ParameterizedTypeReference<Map<String, Object>>() {});
     }
 }

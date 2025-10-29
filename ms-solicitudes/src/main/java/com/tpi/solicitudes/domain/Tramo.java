@@ -41,8 +41,9 @@ public class Tramo {
     @Column(name = "dominio_camion", length = 20)
     private String dominioCamion;
 
-    @Column(length = 30)
-    private String estado;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "estado", length = 30)
+    private EstadoTramo estado;
 
     @Column(name = "fecha_hora_inicio_real")
     private LocalDateTime fechaHoraInicioReal;
@@ -58,4 +59,16 @@ public class Tramo {
 
     @Column(name = "tiempo_real")
     private Double tiempoReal;
+
+    @Column(name = "tipo", length = 50)
+    private String tipo;
+
+    @Column(name = "costo_aproximado")
+    private Double costoAproximado;
+
+    @Column(name = "fecha_hora_inicio_estimada")
+    private LocalDateTime fechaHoraInicioEstimada;
+
+    @Column(name = "fecha_hora_fin_estimada")
+    private LocalDateTime fechaHoraFinEstimada;
 }

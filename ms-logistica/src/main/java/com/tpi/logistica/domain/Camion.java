@@ -44,4 +44,10 @@ public class Camion {
 
     @Column(name = "disponibilidad")
     private Boolean disponibilidad;
+
+    @Column(name = "nombre_transportista", length = 100)
+    private String nombreTransportista;
+
+    @Column(name = "telefono", length = 20)
+    private String telefono;
 }

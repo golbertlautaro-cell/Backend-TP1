@@ -34,4 +34,7 @@ public class Cliente {
 
     @Column(length = 30)
     private String telefono;
+
+    @Column(name = "direccion", length = 200)
+    private String direccion;
 }

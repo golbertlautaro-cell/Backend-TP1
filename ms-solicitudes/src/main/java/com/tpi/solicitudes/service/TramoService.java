@@ -1,15 +1,21 @@
 package com.tpi.solicitudes.service;
 
+import com.tpi.solicitudes.domain.EstadoTramo;
 import com.tpi.solicitudes.domain.Solicitud;
 import com.tpi.solicitudes.domain.Tramo;
 import com.tpi.solicitudes.repository.SolicitudRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import com.tpi.solicitudes.repository.TramoRepository;
+import com.tpi.solicitudes.client.LogisticaClient;
+import com.tpi.solicitudes.client.GoogleMapsClient;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 
 @Service
@@ -17,10 +23,17 @@ public class TramoService {
 
     private final TramoRepository tramoRepository;
     private final SolicitudRepository solicitudRepository;
+    private final LogisticaClient logisticaClient;
+    private final GoogleMapsClient googleMapsClient;
 
-    public TramoService(TramoRepository tramoRepository, SolicitudRepository solicitudRepository) {
+    public TramoService(TramoRepository tramoRepository,
+                        SolicitudRepository solicitudRepository,
+                        LogisticaClient logisticaClient,
+                        GoogleMapsClient googleMapsClient) {
         this.tramoRepository = tramoRepository;
         this.solicitudRepository = solicitudRepository;
+        this.logisticaClient = logisticaClient;
+        this.googleMapsClient = googleMapsClient;
     }
 
     public List<Tramo> listarPorSolicitud(Long solicitudId) { // legacy
@@ -82,20 +95,36 @@ public class TramoService {
         tramoRepository.deleteById(id);
     }
 
-    public Tramo asignarACamion(Long idTramo, String dominioCamion) {
-        Tramo tramo = obtener(idTramo);
-        tramo.setDominioCamion(dominioCamion);
-        return tramoRepository.save(tramo);
+    public Mono<Tramo> asignarACamion(Long idTramo, String dominioCamion) {
+        // NOTA: No tenemos peso/volumen del contenedor en el modelo actual.
+        // Por ahora, se parametriza con 0.0. Ajustar cuando haya origen real de datos.
+        Double pesoContenedor = 0.0;
+        Double volumenContenedor = 0.0;
+
+        return Mono.fromCallable(() -> obtener(idTramo))
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMap(tramo -> logisticaClient.validarCapacidadCamion(dominioCamion, pesoContenedor, volumenContenedor)
+                        .defaultIfEmpty(false)
+                        .flatMap(valido -> {
+                            if (!valido) {
+                                return Mono.error(new IllegalStateException("Capacidad insuficiente del camión para el contenedor"));
+                            }
+                            tramo.setDominioCamion(dominioCamion);
+                            tramo.setEstado(EstadoTramo.ASIGNADO);
+                            return Mono.fromCallable(() -> tramoRepository.save(tramo))
+                                    .subscribeOn(Schedulers.boundedElastic());
+                        })
+                );
     }
 
     // Alias con el nombre solicitado
-    public Tramo asignarCamion(Long idTramo, String dominioCamion) {
+    public Mono<Tramo> asignarCamion(Long idTramo, String dominioCamion) {
         return asignarACamion(idTramo, dominioCamion);
     }
 
     public Tramo iniciarTramo(Long idTramo) {
         Tramo tramo = obtener(idTramo);
-        tramo.setEstado("iniciado");
+        tramo.setEstado(EstadoTramo.INICIADO);
         tramo.setFechaHoraInicioReal(LocalDateTime.now());
         return tramoRepository.save(tramo);
     }
@@ -103,11 +132,56 @@ public class TramoService {
     public Tramo finalizarTramo(Long idTramo, LocalDateTime fechaHoraFin, Double odometroFinal, 
                                  Double costoReal, Double tiempoReal) {
         Tramo tramo = obtener(idTramo);
-        tramo.setEstado("finalizado");
+        tramo.setEstado(EstadoTramo.FINALIZADO);
         tramo.setFechaHoraFinReal(fechaHoraFin);
         tramo.setOdometroFinal(odometroFinal);
         tramo.setCostoReal(costoReal);
         tramo.setTiempoReal(tiempoReal);
         return tramoRepository.save(tramo);
+    }
+
+    /**
+     * Calcula costo y tiempo estimado para un tramo usando Google Directions y datos del camión.
+     * - Distancia (km) y duración (min) desde GoogleMapsClient.
+     * - costoBaseKm del camión desde LogisticaClient.
+     * Guarda costoAproximado, fechaHoraInicioEstimada y fechaHoraFinEstimada.
+     */
+    public Mono<Tramo> calcularCostoYTiempoEstimado(Long idTramo,
+                                                    double origenLat, double origenLng,
+                                                    double destinoLat, double destinoLng) {
+        return Mono.fromCallable(() -> obtener(idTramo))
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMap(tramo -> {
+                    if (tramo.getDominioCamion() == null || tramo.getDominioCamion().isBlank()) {
+                        return Mono.error(new IllegalStateException("El tramo no tiene camión asignado"));
+                    }
+                    String dominio = tramo.getDominioCamion();
+                    return googleMapsClient.obtenerDistanciaYDuracion(origenLat, origenLng, destinoLat, destinoLng)
+                            .zipWith(logisticaClient.obtenerCamion(dominio))
+                            .flatMap(tuple -> {
+                                Map<String, Object> direccionData = tuple.getT1();
+                                Map<String, Object> camion = tuple.getT2();
+
+                                Double distanciaKm = (Double) direccionData.get("distanciaKm");
+                                Long duracionMinutos = (Long) direccionData.get("duracionMinutos");
+
+                                Object costoBaseKmObj = camion != null ? camion.get("costoBaseKm") : null;
+                                if (!(costoBaseKmObj instanceof Number)) {
+                                    return Mono.error(new IllegalStateException("costoBaseKm no disponible para camión: " + dominio));
+                                }
+                                double costoBaseKm = ((Number) costoBaseKmObj).doubleValue();
+                                double costoEstimado = distanciaKm * costoBaseKm;
+                                tramo.setCostoAproximado(costoEstimado);
+
+                                // Usa la duración real de Google Maps
+                                if (tramo.getFechaHoraInicioEstimada() == null) {
+                                    tramo.setFechaHoraInicioEstimada(LocalDateTime.now());
+                                }
+                                tramo.setFechaHoraFinEstimada(tramo.getFechaHoraInicioEstimada().plusMinutes(duracionMinutos));
+
+                                return Mono.fromCallable(() -> tramoRepository.save(tramo))
+                                        .subscribeOn(Schedulers.boundedElastic());
+                            });
+                });
     }
 }

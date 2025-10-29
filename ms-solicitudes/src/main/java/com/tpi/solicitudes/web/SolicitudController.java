@@ -1,17 +1,20 @@
 package com.tpi.solicitudes.web;
 
+import com.tpi.solicitudes.domain.EstadoSolicitud;
 import com.tpi.solicitudes.domain.Solicitud;
 import com.tpi.solicitudes.service.SolicitudService;
+import com.tpi.solicitudes.web.dto.CrearSolicitudRequest;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
-@RequestMapping("/solicitudes")
+@RequestMapping("/api/solicitudes")
 public class SolicitudController {
 
     private final SolicitudService service;
@@ -32,8 +35,14 @@ public class SolicitudController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public Solicitud crear(@RequestBody @Valid Solicitud s) {
-        return service.create(s);
+    @PreAuthorize("hasRole('CLIENTE')")
+    public Solicitud crear(@RequestBody @Valid CrearSolicitudRequest request) {
+        Solicitud solicitud = Solicitud.builder()
+                .idContenedor(request.idContenedor())
+                .idCliente(request.idCliente())
+                .estado(EstadoSolicitud.BORRADOR)
+                .build();
+        return service.create(solicitud);
     }
 
     @PutMapping("/{id}")

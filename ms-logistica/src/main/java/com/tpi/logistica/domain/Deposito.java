@@ -34,4 +34,7 @@ public class Deposito {
     @NotNull
     @Column(name = "costo_estadia_diario", nullable = false)
     private Double costoEstadiaDiario;
+
+    @Column(name = "direccion", length = 200)
+    private String direccion;
 }
